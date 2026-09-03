@@ -132,5 +132,11 @@ class QueryBuilder
 
         return $statement->execute($this->bindings);
     }
+
+    public function lastInsertId(): string
+    {
+        return $this->connection->lastInsertId();
+    }
+
 }
 
