@@ -36,4 +36,19 @@ class Schema
             "DROP TABLE {$table}"
         );
     }
+
+    public function addColumn(
+        string $table,
+        string $column,
+        string $definition
+    ): void {
+        $sql = sprintf(
+            'ALTER TABLE %s ADD COLUMN %s %s',
+            $table,
+            $column,
+            $definition
+        );
+
+        $this->connection->exec($sql);
+    }
 }
