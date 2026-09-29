@@ -2,15 +2,21 @@
 
 namespace Gatovel\Database;
 
-use PDO;
 use Gatovel\Database\connection\Connection;
-use Gatovel\Database\query\QueryBuilder;
+use Gatovel\Database\exceptions\DatabaseException;
+use Gatovel\Database\exceptions\UnsupportedDriverException;
+use Gatovel\Database\migration\Schema;
+use Gatovel\Database\migration\schema\SchemaGrammar;
+use Gatovel\Database\migration\schema\grammars\MySQLSchemaGrammar;
+use Gatovel\Database\migration\schema\grammars\PostgresSchemaGrammar;
+use Gatovel\Database\migration\schema\grammars\SQLiteSchemaGrammar;
 use Gatovel\Database\query\Grammar;
+use Gatovel\Database\query\QueryBuilder;
 use Gatovel\Database\query\grammars\MySQLGrammar;
 use Gatovel\Database\query\grammars\PostgresGrammar;
 use Gatovel\Database\query\grammars\SQLiteGrammar;
 use Gatovel\Database\transaction\Transaction;
-use Gatovel\Database\migration\Schema;
+use PDO;
 
 class Database
 {
@@ -18,27 +24,50 @@ class Database
 
     private static ?Grammar $grammar = null;
 
-    public static function connect(array $config): void
-    {
-        self::$connection = new Connection($config);
+    private static ?SchemaGrammar $schemaGrammar = null;
 
-        $driver = $config['connection'] ?? 'mysql';
+    public static function connect(
+        array $config
+    ): void {
+        $connection = new Connection(
+            $config
+        );
 
-        self::$grammar = match ($driver) {
+        $driver = $config['connection'];
+
+        $grammar = match ($driver) {
             'mysql' => new MySQLGrammar(),
+
             'pgsql' => new PostgresGrammar(),
+
             'sqlite' => new SQLiteGrammar(),
 
-            default => throw new \Exception(
-                "Grammar não suportada: {$driver}"
+            default => throw new UnsupportedDriverException(
+                $driver
             ),
         };
+
+        $schemaGrammar = match ($driver) {
+            'mysql' => new MySQLSchemaGrammar(),
+
+            'pgsql' => new PostgresSchemaGrammar(),
+
+            'sqlite' => new SQLiteSchemaGrammar(),
+
+            default => throw new UnsupportedDriverException(
+                $driver
+            ),
+        };
+
+        self::$connection = $connection;
+        self::$grammar = $grammar;
+        self::$schemaGrammar = $schemaGrammar;
     }
 
     public static function connection(): PDO
     {
         if (self::$connection === null) {
-            throw new \Exception(
+            throw new DatabaseException(
                 'Banco de dados não conectado.'
             );
         }
@@ -55,15 +84,23 @@ class Database
 
     public static function schema(): Schema
     {
+        if (self::$schemaGrammar === null) {
+            throw new DatabaseException(
+                'Banco de dados não conectado.'
+            );
+        }
+
         return new Schema(
-            self::connection()
+            self::connection(),
+            self::$schemaGrammar
         );
     }
 
-    public static function table(string $table): QueryBuilder
-    {
+    public static function table(
+        string $table
+    ): QueryBuilder {
         if (self::$grammar === null) {
-            throw new \Exception(
+            throw new DatabaseException(
                 'Banco de dados não conectado.'
             );
         }

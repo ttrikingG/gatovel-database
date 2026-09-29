@@ -2,53 +2,73 @@
 
 namespace Gatovel\Database\migration;
 
+use Closure;
+use Gatovel\Database\migration\schema\Blueprint;
+use Gatovel\Database\migration\schema\SchemaGrammar;
 use PDO;
 
 class Schema
 {
     public function __construct(
-        private PDO $connection
+        private PDO $connection,
+        private SchemaGrammar $grammar
     ) {
     }
 
     public function create(
         string $table,
-        array $columns
+        Closure $callback
     ): void {
-        $definitions = [];
-
-        foreach ($columns as $name => $definition) {
-            $definitions[] = "{$name} {$definition}";
-        }
-
-        $sql = sprintf(
-            'CREATE TABLE %s (%s)',
-            $table,
-            implode(', ', $definitions)
+        $blueprint = new Blueprint(
+            $table
         );
 
-        $this->connection->exec($sql);
+        $callback(
+            $blueprint
+        );
+
+        $sql = $this->grammar->compileCreate(
+            $blueprint
+        );
+
+        $this->connection->exec(
+            $sql
+        );
     }
 
-    public function drop(string $table): void
-    {
+    public function drop(
+        string $table
+    ): void {
+        $sql = $this->grammar->compileDrop(
+            $table
+        );
+
         $this->connection->exec(
-            "DROP TABLE {$table}"
+            $sql
         );
     }
 
     public function addColumn(
         string $table,
-        string $column,
-        string $definition
+        Closure $callback
     ): void {
-        $sql = sprintf(
-            'ALTER TABLE %s ADD COLUMN %s %s',
-            $table,
-            $column,
-            $definition
+        $blueprint = new Blueprint(
+            $table
         );
 
-        $this->connection->exec($sql);
+        $callback(
+            $blueprint
+        );
+
+        foreach ($blueprint->columns() as $column) {
+            $sql = $this->grammar->compileAddColumn(
+                $table,
+                $column
+            );
+
+            $this->connection->exec(
+                $sql
+            );
+        }
     }
 }

@@ -2,29 +2,57 @@
 
 namespace Gatovel\Database\migration;
 
+use Gatovel\Database\exceptions\DatabaseException;
+
 class MigrationLoader
 {
-    public function load(string $directory): array
-    {
+    /**
+     * @return LoadedMigration[]
+     */
+    public function load(
+        string $directory
+    ): array {
+        if (!is_dir($directory)) {
+            throw new DatabaseException(
+                "Diretório de migrations não encontrado: {$directory}"
+            );
+        }
+
+        $files = glob(
+            rtrim($directory, '/\\') . '/*.php'
+        );
+
+        if ($files === false) {
+            throw new DatabaseException(
+                "Não foi possível carregar o diretório de migrations: {$directory}"
+            );
+        }
+
+        sort(
+            $files,
+            SORT_STRING
+        );
+
         $migrations = [];
 
-        foreach (glob($directory . '/*.php') as $file) {
+        foreach ($files as $file) {
+            $migration = require $file;
 
-            require_once $file;
-
-            $class = pathinfo($file, PATHINFO_FILENAME);
-
-            $className = __NAMESPACE__ . '\\' . $class;
-
-            if (!class_exists($className)) {
-                continue;
+            if (!$migration instanceof Migration) {
+                throw new DatabaseException(
+                    "O arquivo não retornou uma Migration válida: {$file}"
+                );
             }
 
-            if (!is_subclass_of($className, Migration::class)) {
-                continue;
-            }
+            $name = pathinfo(
+                $file,
+                PATHINFO_FILENAME
+            );
 
-            $migrations[] = new $className();
+            $migrations[] = new LoadedMigration(
+                $name,
+                $migration
+            );
         }
 
         return $migrations;

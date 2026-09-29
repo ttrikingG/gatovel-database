@@ -2,6 +2,7 @@
 
 namespace Gatovel\Database\query\grammars;
 
+use Gatovel\Database\exceptions\DatabaseException;
 use Gatovel\Database\query\Grammar;
 
 class MySQLGrammar implements Grammar
@@ -12,15 +13,26 @@ class MySQLGrammar implements Grammar
         array $wheres,
         ?int $limit = null
     ): string {
-        $columns = empty($columns)
+        $table = $this->wrapIdentifier($table);
+
+        $columns = $columns === []
             ? '*'
-            : implode(', ', $columns);
+            : implode(
+                ', ',
+                array_map(
+                    fn (string $column): string
+                        => $column === '*'
+                            ? '*'
+                            : $this->wrapIdentifier($column),
+                    $columns
+                )
+            );
 
         $sql = "SELECT {$columns} FROM {$table}";
 
-        if (!empty($wheres)) {
-            $sql .= ' WHERE ' . implode(' AND ', $wheres);
-        }
+        $sql .= $this->compileWheres(
+            $wheres
+        );
 
         if ($limit !== null) {
             $sql .= " LIMIT {$limit}";
@@ -33,14 +45,26 @@ class MySQLGrammar implements Grammar
         string $table,
         array $data
     ): string {
-        $columns = implode(', ', array_keys($data));
+        $table = $this->wrapIdentifier($table);
 
-        $placeholders = implode(
-            ', ',
-            array_fill(0, count($data), '?')
+        $columns = array_map(
+            fn (string $column): string
+                => $this->wrapIdentifier($column),
+            array_keys($data)
         );
 
-        return "INSERT INTO {$table} ({$columns}) VALUES ({$placeholders})";
+        $placeholders = array_fill(
+            0,
+            count($data),
+            '?'
+        );
+
+        return sprintf(
+            'INSERT INTO %s (%s) VALUES (%s)',
+            $table,
+            implode(', ', $columns),
+            implode(', ', $placeholders)
+        );
     }
 
     public function compileUpdate(
@@ -48,33 +72,104 @@ class MySQLGrammar implements Grammar
         array $data,
         array $wheres
     ): string {
-        $columns = implode(
-            ', ',
-            array_map(
-                fn ($column) => "{$column} = ?",
-                array_keys($data)
-            )
-        );
+        $table = $this->wrapIdentifier($table);
 
-        $sql = "UPDATE {$table} SET {$columns}";
+        $sets = [];
 
-        if (!empty($wheres)) {
-            $sql .= ' WHERE ' . implode(' AND ', $wheres);
+        foreach (array_keys($data) as $column) {
+            $sets[] = $this->wrapIdentifier(
+                $column
+            ) . ' = ?';
         }
 
-        return $sql;
+        $sql = sprintf(
+            'UPDATE %s SET %s',
+            $table,
+            implode(', ', $sets)
+        );
+
+        return $sql . $this->compileWheres(
+            $wheres
+        );
     }
 
     public function compileDelete(
         string $table,
         array $wheres
     ): string {
-        $sql = "DELETE FROM {$table}";
+        $table = $this->wrapIdentifier($table);
 
-        if (!empty($wheres)) {
-            $sql .= ' WHERE ' . implode(' AND ', $wheres);
+        return "DELETE FROM {$table}"
+            . $this->compileWheres(
+                $wheres
+            );
+    }
+
+    private function compileWheres(
+        array $wheres
+    ): string {
+        if ($wheres === []) {
+            return '';
         }
 
-        return $sql;
+        $conditions = [];
+
+        foreach ($wheres as $index => $where) {
+            $column = $this->wrapIdentifier(
+                $where['column']
+            );
+
+            $operator = $where['operator'];
+
+            $boolean = $index === 0
+                ? ''
+                : ' ' . $where['boolean'] . ' ';
+
+            $conditions[] = $boolean
+                . $column
+                . ' '
+                . $operator
+                . ' ?';
+        }
+
+        return ' WHERE '
+            . implode('', $conditions);
+    }
+
+    private function wrapIdentifier(
+        string $identifier
+    ): string {
+        if ($identifier === '') {
+            throw new DatabaseException(
+                'O identificador SQL não pode ser vazio.'
+            );
+        }
+
+        $parts = explode(
+            '.',
+            $identifier
+        );
+
+        foreach ($parts as $part) {
+            if (
+                !preg_match(
+                    '/^[A-Za-z_][A-Za-z0-9_]*$/',
+                    $part
+                )
+            ) {
+                throw new DatabaseException(
+                    "Identificador SQL inválido: {$identifier}"
+                );
+            }
+        }
+
+        return implode(
+            '.',
+            array_map(
+                static fn (string $part): string
+                    => '`' . $part . '`',
+                $parts
+            )
+        );
     }
 }

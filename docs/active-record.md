@@ -15,14 +15,12 @@ QueryBuilder
   ↓
 Grammar
   ↓
-Connection
-  ↓
 PDO
   ↓
 Database
 ```
 
-Active Record is built on top of the existing Query Builder. It does not replace the database layer.
+Active Record is built on top of the Query Builder. It does not replace the database layer.
 
 ## Creating a Model
 
@@ -64,9 +62,36 @@ The default primary key is:
 id
 ```
 
+## Attributes
+
+Model attributes are stored internally by `ActiveRecord` and can be accessed using normal property syntax.
+
+```php
+$user = new User();
+
+$user->name = 'Tom';
+$user->email = 'tom@example.com';
+```
+
+Read them in the same way:
+
+```php
+echo $user->name;
+echo $user->email;
+```
+
+A model can also be initialized with attributes:
+
+```php
+$user = new User([
+    'name' => 'Tom',
+    'email' => 'tom@example.com',
+]);
+```
+
 ## Creating a Record
 
-Create a new model:
+Create a model and call `save()`:
 
 ```php
 $user = new User();
@@ -74,15 +99,26 @@ $user = new User();
 $user->name = 'Tom Garcia';
 $user->email = 'tom@example.com';
 
-$user->save();
+$result = $user->save();
 ```
 
-The `save()` method inserts the record when it does not have a primary key.
+When the model does not contain a primary key, `save()` performs an insert.
 
-The generated ID is automatically assigned to the model:
+After a successful insert, the generated ID is assigned to the model when PDO provides one:
 
 ```php
 echo $user->id;
+```
+
+You can also create the model with initial attributes:
+
+```php
+$user = new User([
+    'name' => 'Tom Garcia',
+    'email' => 'tom@example.com',
+]);
+
+$user->save();
 ```
 
 ## Finding a Record
@@ -95,25 +131,22 @@ $user = User::find(1);
 
 If the record exists, an instance of the model is returned.
 
-If it does not exist:
+For example:
+
+```php
+if ($user !== null) {
+    echo $user->name;
+    echo $user->email;
+}
+```
+
+If no matching record exists:
 
 ```php
 null
 ```
 
-Example:
-
-```php
-$user = User::find(1);
-
-if ($user === null) {
-    echo 'User not found.';
-    return;
-}
-
-echo $user->name;
-echo $user->email;
-```
+`find()` accepts integer or string primary-key values.
 
 ## Retrieving All Records
 
@@ -123,27 +156,60 @@ Use `all()`:
 $users = User::all();
 ```
 
-The result is an array containing the database records.
+`all()` returns an array of model objects.
 
-Example:
+Therefore:
 
 ```php
-$users = User::all();
+foreach ($users as $user) {
+    echo $user->name . PHP_EOL;
+}
+```
 
+Each item is an instance of the model class, not a raw database array.
+
+Conceptually:
+
+```text
+Database rows
+    ↓
+ActiveRecord::all()
+    ↓
+User object
+User object
+User object
+```
+
+## Where Queries
+
+A model can start a Query Builder query with `where()`:
+
+```php
+$users = User::where('name', 'Tom')
+    ->get();
+```
+
+`where()` returns a `QueryBuilder`.
+
+Because of that, results returned by `get()` in this case are associative arrays:
+
+```php
 foreach ($users as $user) {
     echo $user['name'] . PHP_EOL;
 }
 ```
 
-## Where Queries
-
-The model can also start a Query Builder query:
+This is different from:
 
 ```php
-$users = User::where('name', 'Tom')->get();
+User::all();
 ```
 
-Multiple conditions can be used:
+which returns model objects.
+
+## Multiple Conditions
+
+Because `where()` returns the Query Builder, its supported methods can be chained:
 
 ```php
 $users = User::where('name', 'Tom')
@@ -154,14 +220,24 @@ $users = User::where('name', 'Tom')
 Custom operators are supported:
 
 ```php
-$users = User::where('id', 10, '>')->get();
+$users = User::where('id', 10, '>')
+    ->get();
 ```
 
-Because `where()` returns the Query Builder, all supported Query Builder methods can be chained.
+The Query Builder can continue the query:
+
+```php
+$users = User::where('active', 1)
+    ->orWhere('name', 'Tom')
+    ->limit(10)
+    ->get();
+```
+
+For the complete query API, see the Query Builder documentation.
 
 ## Updating a Record
 
-Retrieve a model and modify its attributes:
+Retrieve a model, change its attributes and call `save()`:
 
 ```php
 $user = User::find(1);
@@ -172,11 +248,25 @@ if ($user !== null) {
 }
 ```
 
-When the model already has its primary key, `save()` performs an update instead of an insert.
+When the model already contains its primary key, `save()` performs an update.
+
+The primary key itself is removed from the update data and is used as the `WHERE` condition.
+
+Conceptually:
+
+```text
+Model has primary key?
+        ↓
+       yes
+        ↓
+UPDATE ... WHERE primary_key = ?
+```
+
+This also benefits from the Query Builder protection that prevents updates without a `WHERE` condition.
 
 ## Deleting a Record
 
-Retrieve the model:
+Retrieve the model and call `delete()`:
 
 ```php
 $user = User::find(1);
@@ -186,7 +276,30 @@ if ($user !== null) {
 }
 ```
 
-The record associated with the model's primary key is deleted.
+The record is deleted using the model's primary key.
+
+Conceptually:
+
+```sql
+DELETE FROM users
+WHERE id = ?;
+```
+
+After a successful deletion, the primary-key attribute is removed from the model.
+
+Calling `delete()` on a model without a primary key returns:
+
+```php
+false
+```
+
+This prevents Active Record from issuing an unrestricted delete.
+
+## Saving After Delete
+
+Because a successful `delete()` removes the primary key from the model, the object no longer represents a persisted row with that identifier.
+
+If `save()` is called afterward, Active Record treats it as a new record and performs an insert using the remaining attributes.
 
 ## Primary Key
 
@@ -196,7 +309,7 @@ The default primary key is:
 protected static string $primaryKey = 'id';
 ```
 
-If a model uses a different primary key, it can override the property:
+A model can override it:
 
 ```php
 class Product extends ActiveRecord
@@ -207,23 +320,32 @@ class Product extends ActiveRecord
 }
 ```
 
-## Attributes
+`find()`, `save()` and `delete()` use the configured primary key.
 
-Model attributes can be accessed using normal property syntax:
+## Save Lifecycle
 
-```php
-$user->name = 'Tom';
-$user->email = 'tom@example.com';
+`save()` determines whether the model is new by checking its primary-key attribute.
+
+```text
+save()
+  ↓
+Primary key exists and is not null?
+  ├── no
+  │    ↓
+  │  INSERT
+  │    ↓
+  │  lastInsertId()
+  │    ↓
+  │  Assign generated ID when available
+  │
+  └── yes
+       ↓
+     UPDATE
+       ↓
+     WHERE primary key = value
 ```
 
-Read attributes in the same way:
-
-```php
-echo $user->name;
-echo $user->email;
-```
-
-Internally, Active Record stores these values as model attributes.
+A missing primary key and a primary key explicitly set to `null` are both treated as a new record.
 
 ## Complete Example
 
@@ -236,10 +358,10 @@ require_once __DIR__ . '/bootstrap.php';
 use app\models\User;
 
 // Create
-$user = new User();
-
-$user->name = 'Tom Garcia';
-$user->email = 'tom@example.com';
+$user = new User([
+    'name' => 'Tom Garcia',
+    'email' => 'tom@example.com',
+]);
 
 $user->save();
 
@@ -258,11 +380,19 @@ echo $user->name . PHP_EOL;
 $user->name = 'Tom Garcia Updated';
 $user->save();
 
-// Query
-$users = User::where('name', 'Tom Garcia Updated')->get();
+// Query Builder through Active Record
+$records = User::where('name', 'Tom Garcia Updated')
+    ->get();
 
-foreach ($users as $user) {
-    echo $user['email'] . PHP_EOL;
+foreach ($records as $record) {
+    echo $record['email'] . PHP_EOL;
+}
+
+// Model objects
+$users = User::all();
+
+foreach ($users as $model) {
+    echo $model->name . PHP_EOL;
 }
 
 // Delete
@@ -275,13 +405,15 @@ Both APIs are available and serve different purposes.
 
 ### Query Builder
 
-Use the Query Builder when you want direct query construction:
+Use the Query Builder when direct query construction is desired:
 
 ```php
 $users = Database::table('users')
     ->where('name', 'Tom')
     ->get();
 ```
+
+The Query Builder returns database rows as arrays.
 
 ### Active Record
 
@@ -290,17 +422,24 @@ Use Active Record when working with application models:
 ```php
 $user = User::find(1);
 
-$user->name = 'Tom Garcia';
-
-$user->save();
+if ($user !== null) {
+    $user->name = 'Tom Garcia';
+    $user->save();
+}
 ```
+
+Methods such as `find()` and `all()` create model objects.
 
 The two APIs work together:
 
 ```text
-Active Record
+Application Model
       ↓
-Query Builder
+ActiveRecord
+      ↓
+QueryBuilder
+      ↓
+Database
 ```
 
 ## Responsibility
@@ -316,11 +455,19 @@ Update
 Delete
 ```
 
-More advanced ORM functionality is outside the scope of the core database package.
+It is not intended to provide a complete ORM with relationships, eager loading or other advanced ORM features.
 
-## Next Step
+More advanced ORM functionality can remain outside the core database package.
 
-You have now completed the main Gatovel Database documentation.
+## Related Documentation
+
+For direct database queries:
+
+[Query Builder →](query-builder.md)
+
+For database structure:
+
+[Migrations →](migrations.md)
 
 Return to the documentation index:
 

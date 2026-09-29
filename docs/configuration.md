@@ -2,137 +2,285 @@
 
 Gatovel Database uses the `Database` class to establish and manage the database connection.
 
+The package supports:
+
+- MySQL
+- PostgreSQL
+- SQLite
+
+The database driver must be explicitly defined through the `connection` option.
+
 ## Basic Configuration
+
+Example using MySQL:
 
 ```php
 use Gatovel\Database\Database;
 
 Database::connect([
     'connection' => 'mysql',
-    'host'       => 'localhost',
-    'port'       => 3306,
-    'database'   => 'my_database',
-    'username'   => 'root',
-    'password'   => 'password',
-    'charset'    => 'utf8mb4',
+    'host' => 'localhost',
+    'port' => 3306,
+    'database' => 'my_database',
+    'username' => 'root',
+    'password' => 'password',
+    'charset' => 'utf8mb4',
 ]);
 ```
 
-## Configuration Options
+There is no implicit default driver. The `connection` option is required.
 
-| Option       | Description                          |
-| ------------ | ------------------------------------ |
-| `connection` | Database driver                      |
-| `host`       | Database server hostname or IP       |
-| `port`       | Database server port                 |
-| `database`   | Database name or SQLite file         |
-| `username`   | Database username                    |
-| `password`   | Database password                    |
-| `charset`    | Character set used by the connection |
+## Configuration by Driver
 
-## MySQL
+The required configuration depends on the selected driver.
+
+### MySQL
+
+Required options:
+
+```text
+connection
+host
+port
+database
+username
+password
+charset
+```
 
 Example:
 
 ```php
 Database::connect([
     'connection' => 'mysql',
-    'host'       => 'localhost',
-    'port'       => 3306,
-    'database'   => 'sistema',
-    'username'   => 'root',
-    'password'   => 'password',
-    'charset'    => 'utf8mb4',
+    'host' => 'localhost',
+    'port' => 3306,
+    'database' => 'sistema',
+    'username' => 'root',
+    'password' => 'password',
+    'charset' => 'utf8mb4',
 ]);
 ```
 
-The MySQL connection uses the following PDO DSN structure:
+The generated PDO DSN follows:
 
 ```text
 mysql:host=HOST;port=PORT;dbname=DATABASE;charset=CHARSET
 ```
 
-## PostgreSQL
+### PostgreSQL
+
+Required options:
+
+```text
+connection
+host
+port
+database
+username
+password
+```
 
 Example:
 
 ```php
 Database::connect([
     'connection' => 'pgsql',
-    'host'       => 'localhost',
-    'port'       => 5432,
-    'database'   => 'my_database',
-    'username'   => 'postgres',
-    'password'   => 'password',
-    'charset'    => 'utf8',
+    'host' => 'localhost',
+    'port' => 5432,
+    'database' => 'my_database',
+    'username' => 'postgres',
+    'password' => 'password',
 ]);
 ```
 
-The PostgreSQL connection uses:
+The generated PDO DSN follows:
 
 ```text
 pgsql:host=HOST;port=PORT;dbname=DATABASE
 ```
 
-## SQLite
+### SQLite
 
-SQLite does not require a server, username, or password.
+SQLite does not require a database server, username, password or charset.
 
-Example:
+Required options:
+
+```text
+connection
+database
+```
+
+Example using a database file:
 
 ```php
 Database::connect([
     'connection' => 'sqlite',
-    'database'   => __DIR__ . '/database.sqlite',
-    'username'   => '',
-    'password'   => '',
-    'charset'    => 'utf8',
+    'database' => __DIR__ . '/database.sqlite',
 ]);
 ```
 
-The `database` option points to the SQLite database file.
+The generated PDO DSN follows:
 
-## Using Environment Variables
-
-For applications, database credentials should normally be stored in environment variables instead of being written directly in the source code.
-
-Example `.env`:
-
-```env
-DB_CONNECTION=mysql
-DB_HOST=localhost
-DB_PORT=3306
-DB_DATABASE=sistema
-DB_USERNAME=root
-DB_PASSWORD=password
-DB_CHARSET=utf8mb4
+```text
+sqlite:DATABASE
 ```
 
-The application can then build the configuration:
+For an in-memory SQLite database:
 
 ```php
 Database::connect([
-    'connection' => $_ENV['DB_CONNECTION'],
-    'host'       => $_ENV['DB_HOST'],
-    'port'       => $_ENV['DB_PORT'],
-    'database'   => $_ENV['DB_DATABASE'],
-    'username'   => $_ENV['DB_USERNAME'],
-    'password'   => $_ENV['DB_PASSWORD'],
-    'charset'    => $_ENV['DB_CHARSET'],
+    'connection' => 'sqlite',
+    'database' => ':memory:',
 ]);
 ```
 
-Gatovel Database itself does not require a specific environment-variable library. The application is responsible for loading environment variables.
+This is useful for tests and temporary database operations.
 
-## Connection
+## Configuration Validation
 
-Once `Database::connect()` has been called, the connection can be accessed through:
+Connection configuration is validated before PDO is created.
+
+The `connection` option:
+
+- must exist;
+- must be a string;
+- cannot be empty.
+
+The supported values are:
+
+```text
+mysql
+pgsql
+sqlite
+```
+
+Each driver also validates its required options.
+
+For example, this configuration is invalid:
+
+```php
+Database::connect([
+    'connection' => 'mysql',
+    'host' => 'localhost',
+]);
+```
+
+because the remaining required MySQL options are missing.
+
+Required configuration values other than `password` cannot be empty.
+
+The password must be a string, but an empty password is allowed.
+
+## Exceptions
+
+Gatovel Database provides database-specific exceptions under:
+
+```text
+Gatovel\Database\exceptions
+```
+
+The exception hierarchy starts with:
+
+```php
+Gatovel\Database\exceptions\DatabaseException
+```
+
+Specific connection-related exceptions include:
+
+```text
+DatabaseException
+├── ConfigurationException
+├── ConnectionException
+└── UnsupportedDriverException
+```
+
+### ConfigurationException
+
+Thrown when required connection configuration is missing or invalid.
+
+Example:
+
+```php
+use Gatovel\Database\exceptions\ConfigurationException;
+
+try {
+    Database::connect([
+        'connection' => 'mysql',
+    ]);
+} catch (ConfigurationException $exception) {
+    echo $exception->getMessage();
+}
+```
+
+### UnsupportedDriverException
+
+Thrown when an unsupported driver is requested.
+
+Example:
+
+```php
+use Gatovel\Database\exceptions\UnsupportedDriverException;
+
+try {
+    Database::connect([
+        'connection' => 'oracle',
+    ]);
+} catch (UnsupportedDriverException $exception) {
+    echo $exception->getMessage();
+}
+```
+
+### ConnectionException
+
+Thrown when the configuration is valid but PDO cannot establish the database connection.
+
+Example:
+
+```php
+use Gatovel\Database\exceptions\ConnectionException;
+
+try {
+    Database::connect([
+        'connection' => 'mysql',
+        'host' => 'localhost',
+        'port' => 3306,
+        'database' => 'my_database',
+        'username' => 'root',
+        'password' => 'password',
+        'charset' => 'utf8mb4',
+    ]);
+} catch (ConnectionException $exception) {
+    echo $exception->getMessage();
+}
+```
+
+The original PDO exception is preserved as the previous exception.
+
+## PDO Configuration
+
+Connections created by Gatovel Database configure PDO with:
+
+```text
+PDO::ATTR_ERRMODE
+    → PDO::ERRMODE_EXCEPTION
+
+PDO::ATTR_DEFAULT_FETCH_MODE
+    → PDO::FETCH_ASSOC
+
+PDO::ATTR_EMULATE_PREPARES
+    → false
+```
+
+This means database errors are reported as exceptions, associative arrays are the default fetch format, and native prepared statements are preferred.
+
+## Accessing the Connection
+
+After `Database::connect()` succeeds, the underlying PDO instance is available through:
 
 ```php
 $connection = Database::connection();
 ```
-
-This returns the underlying PDO connection.
 
 Example:
 
@@ -146,43 +294,124 @@ $result = $statement->fetchColumn();
 echo $result;
 ```
 
-## Selecting a Database Driver
+Calling `Database::connection()` before establishing a connection causes a `DatabaseException`.
 
-Gatovel Database automatically selects the appropriate SQL grammar based on the `connection` option:
+## Using Environment Variables
 
-```text
-mysql  → MySQLGrammar
-pgsql  → PostgresGrammar
-sqlite → SQLiteGrammar
+Applications should normally keep database credentials outside source code.
+
+Example `.env` for MySQL:
+
+```env
+DB_CONNECTION=mysql
+DB_HOST=localhost
+DB_PORT=3306
+DB_DATABASE=sistema
+DB_USERNAME=root
+DB_PASSWORD=password
+DB_CHARSET=utf8mb4
 ```
 
-This allows the Query Builder to generate database-specific SQL while keeping the application API consistent.
-
-## Connection Errors
-
-If the database connection cannot be established, Gatovel Database throws an exception:
+The application can build the configuration:
 
 ```php
-try {
+Database::connect([
+    'connection' => $_ENV['DB_CONNECTION'],
+    'host' => $_ENV['DB_HOST'],
+    'port' => $_ENV['DB_PORT'],
+    'database' => $_ENV['DB_DATABASE'],
+    'username' => $_ENV['DB_USERNAME'],
+    'password' => $_ENV['DB_PASSWORD'],
+    'charset' => $_ENV['DB_CHARSET'],
+]);
+```
 
-    Database::connect([
-        'connection' => 'mysql',
-        'host'       => 'localhost',
-        'port'       => 3306,
-        'database'   => 'my_database',
-        'username'   => 'root',
-        'password'   => 'password',
-        'charset'    => 'utf8mb4',
-    ]);
+Gatovel Database does not depend on a specific environment-variable library.
 
-} catch (\Exception $exception) {
+Loading environment variables and building the configuration array are responsibilities of the application or framework using the package.
 
-    echo $exception->getMessage();
-}
+## Driver Selection
+
+`Database::connect()` configures two driver-specific layers.
+
+The Query Builder grammar:
+
+```text
+mysql
+  → MySQLGrammar
+
+pgsql
+  → PostgresGrammar
+
+sqlite
+  → SQLiteGrammar
+```
+
+And the Schema grammar:
+
+```text
+mysql
+  → MySQLSchemaGrammar
+
+pgsql
+  → PostgresSchemaGrammar
+
+sqlite
+  → SQLiteSchemaGrammar
+```
+
+Conceptually:
+
+```text
+Database::connect()
+        ↓
+    connection
+        ↓
+       PDO
+        +
+   Query Grammar
+        +
+   Schema Grammar
+```
+
+This allows the same public API to generate database-specific SQL for both data queries and schema operations.
+
+## Database Services
+
+After connecting, `Database` provides access to the main database services:
+
+```php
+Database::connection();
+
+Database::table('users');
+
+Database::schema();
+
+Database::transaction();
+```
+
+Their responsibilities are:
+
+```text
+connection()
+    → underlying PDO connection
+
+table()
+    → Query Builder
+
+schema()
+    → database structure operations
+
+transaction()
+    → transaction control
 ```
 
 ## Next Step
 
-After configuring the database connection, you can start executing queries with the Query Builder:
+After configuring the database connection, queries can be executed with:
 
 [Query Builder →](query-builder.md)
+
+Database structure can be managed with:
+
+[Migrations →](migrations.md)

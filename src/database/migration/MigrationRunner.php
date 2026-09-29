@@ -3,36 +3,44 @@
 namespace Gatovel\Database\migration;
 
 use Gatovel\Database\Database;
+use Gatovel\Database\exceptions\DatabaseException;
 
 class MigrationRunner
 {
     private MigrationRepository $repository;
 
+    private MigrationLoader $loader;
+
     public function __construct()
     {
         $this->repository = new MigrationRepository(
-            Database::connection()
+            Database::connection(),
+            Database::schema()
         );
+
+        $this->loader = new MigrationLoader();
 
         $this->repository->createTable();
     }
 
     /**
-     * @param Migration[] $migrations
+     * @param LoadedMigration[] $migrations
      */
-    public function run(array $migrations): void
-    {
+    public function run(
+        array $migrations
+    ): void {
         $batch = $this->repository->getLastBatch() + 1;
 
-        foreach ($migrations as $migration) {
-
-            $name = $migration::class;
+        foreach ($migrations as $loadedMigration) {
+            $name = $loadedMigration->name();
 
             if ($this->repository->hasRun($name)) {
                 continue;
             }
 
-            $migration->up();
+            $loadedMigration
+                ->migration()
+                ->up();
 
             $this->repository->log(
                 $name,
@@ -42,46 +50,74 @@ class MigrationRunner
     }
 
     /**
-     * @param Migration[] $migrations
+     * @param LoadedMigration[] $migrations
      */
-    public function rollback(array $migrations): void
-    {
-        $executed = $this->repository->getLastBatchMigrations();
+    public function rollback(
+        array $migrations
+    ): void {
+        $executed = $this->repository
+            ->getLastBatchMigrations();
 
         foreach ($executed as $record) {
+            $loadedMigration = $this->findMigration(
+                $migrations,
+                $record['migration']
+            );
 
-            foreach ($migrations as $migration) {
-
-                if ($migration::class !== $record['migration']) {
-                    continue;
-                }
-
-                $migration->down();
-
-                $this->repository->delete(
-                    $record['migration']
+            if ($loadedMigration === null) {
+                throw new DatabaseException(
+                    'Migration executada não encontrada para rollback: '
+                    . $record['migration']
                 );
-
-                break;
             }
+
+            $loadedMigration
+                ->migration()
+                ->down();
+
+            $this->repository->delete(
+                $record['migration']
+            );
         }
     }
 
-    public function migrate(string $directory): void
-    {
-        $loader = new MigrationLoader();
+    public function migrate(
+        string $directory
+    ): void {
+        $migrations = $this->loader->load(
+            $directory
+        );
 
-        $migrations = $loader->load($directory);
-
-        $this->run($migrations);
+        $this->run(
+            $migrations
+        );
     }
 
-    public function rollbackLastBatch(string $directory): void
-    {
-        $loader = new MigrationLoader();
+    public function rollbackLastBatch(
+        string $directory
+    ): void {
+        $migrations = $this->loader->load(
+            $directory
+        );
 
-        $migrations = $loader->load($directory);
+        $this->rollback(
+            $migrations
+        );
+    }
 
-        $this->rollback($migrations);
+    /**
+     * @param LoadedMigration[] $migrations
+     */
+    private function findMigration(
+        array $migrations,
+        string $name
+    ): ?LoadedMigration {
+        foreach ($migrations as $loadedMigration) {
+            if ($loadedMigration->name() === $name) {
+                return $loadedMigration;
+            }
+        }
+
+        return null;
     }
 }

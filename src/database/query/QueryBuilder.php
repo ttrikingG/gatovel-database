@@ -2,10 +2,23 @@
 
 namespace Gatovel\Database\query;
 
+use Gatovel\Database\exceptions\DatabaseException;
 use PDO;
 
 class QueryBuilder
 {
+    private const ALLOWED_OPERATORS = [
+        '=',
+        '!=',
+        '<>',
+        '>',
+        '>=',
+        '<',
+        '<=',
+        'LIKE',
+        'NOT LIKE',
+    ];
+
     private PDO $connection;
 
     private string $table;
@@ -30,8 +43,15 @@ class QueryBuilder
         $this->grammar = $grammar;
     }
 
-    public function select(array $columns = ['*']): static
-    {
+    public function select(
+        array $columns = ['*']
+    ): static {
+        if ($columns === []) {
+            throw new DatabaseException(
+                'A seleção deve possuir pelo menos uma coluna.'
+            );
+        }
+
         $this->columns = $columns;
 
         return $this;
@@ -42,14 +62,58 @@ class QueryBuilder
         mixed $value,
         string $operator = '='
     ): static {
-        $this->wheres[] = "{$column} {$operator} ?";
-        $this->bindings[] = $value;
-
-        return $this;
+        return $this->addWhere(
+            $column,
+            $value,
+            $operator,
+            'AND'
+        );
     }
 
-    public function limit(int $limit): static
-    {
+    public function orWhere(
+        string $column,
+        mixed $value,
+        string $operator = '='
+    ): static {
+        return $this->addWhere(
+            $column,
+            $value,
+            $operator,
+            'OR'
+        );
+    }
+
+    public function whereLike(
+        string $column,
+        mixed $value
+    ): static {
+        return $this->where(
+            $column,
+            $value,
+            'LIKE'
+        );
+    }
+
+    public function orWhereLike(
+        string $column,
+        mixed $value
+    ): static {
+        return $this->orWhere(
+            $column,
+            $value,
+            'LIKE'
+        );
+    }
+
+    public function limit(
+        int $limit
+    ): static {
+        if ($limit < 1) {
+            throw new DatabaseException(
+                'O limite deve ser maior que zero.'
+            );
+        }
+
         $this->limit = $limit;
 
         return $this;
@@ -64,11 +128,17 @@ class QueryBuilder
             $this->limit
         );
 
-        $statement = $this->connection->prepare($sql);
+        $statement = $this->connection->prepare(
+            $sql
+        );
 
-        $statement->execute($this->bindings);
+        $statement->execute(
+            $this->bindings
+        );
 
-        return $statement->fetchAll(PDO::FETCH_ASSOC);
+        return $statement->fetchAll(
+            PDO::FETCH_ASSOC
+        );
     }
 
     public function first(): ?array
@@ -80,31 +150,61 @@ class QueryBuilder
             1
         );
 
-        $statement = $this->connection->prepare($sql);
+        $statement = $this->connection->prepare(
+            $sql
+        );
 
-        $statement->execute($this->bindings);
+        $statement->execute(
+            $this->bindings
+        );
 
-        $result = $statement->fetch(PDO::FETCH_ASSOC);
+        $result = $statement->fetch(
+            PDO::FETCH_ASSOC
+        );
 
-        return $result === false ? null : $result;
+        return $result === false
+            ? null
+            : $result;
     }
 
-    public function insert(array $data): bool
-    {
+    public function insert(
+        array $data
+    ): bool {
+        if ($data === []) {
+            throw new DatabaseException(
+                'Os dados para inserção não podem estar vazios.'
+            );
+        }
+
         $sql = $this->grammar->compileInsert(
             $this->table,
             $data
         );
 
-        $statement = $this->connection->prepare($sql);
+        $statement = $this->connection->prepare(
+            $sql
+        );
 
         return $statement->execute(
             array_values($data)
         );
     }
 
-    public function update(array $data): bool
-    {
+    public function update(
+        array $data
+    ): bool {
+        if ($data === []) {
+            throw new DatabaseException(
+                'Os dados para atualização não podem estar vazios.'
+            );
+        }
+
+        if ($this->wheres === []) {
+            throw new DatabaseException(
+                'Atualização sem condição WHERE não é permitida.'
+            );
+        }
+
         $sql = $this->grammar->compileUpdate(
             $this->table,
             $data,
@@ -116,21 +216,35 @@ class QueryBuilder
             $this->bindings
         );
 
-        $statement = $this->connection->prepare($sql);
+        $statement = $this->connection->prepare(
+            $sql
+        );
 
-        return $statement->execute($bindings);
+        return $statement->execute(
+            $bindings
+        );
     }
 
     public function delete(): bool
     {
+        if ($this->wheres === []) {
+            throw new DatabaseException(
+                'Exclusão sem condição WHERE não é permitida.'
+            );
+        }
+
         $sql = $this->grammar->compileDelete(
             $this->table,
             $this->wheres
         );
 
-        $statement = $this->connection->prepare($sql);
+        $statement = $this->connection->prepare(
+            $sql
+        );
 
-        return $statement->execute($this->bindings);
+        return $statement->execute(
+            $this->bindings
+        );
     }
 
     public function lastInsertId(): string
@@ -138,5 +252,36 @@ class QueryBuilder
         return $this->connection->lastInsertId();
     }
 
-}
+    private function addWhere(
+        string $column,
+        mixed $value,
+        string $operator,
+        string $boolean
+    ): static {
+        $operator = strtoupper(
+            trim($operator)
+        );
 
+        if (
+            !in_array(
+                $operator,
+                self::ALLOWED_OPERATORS,
+                true
+            )
+        ) {
+            throw new DatabaseException(
+                "Operador não permitido: {$operator}"
+            );
+        }
+
+        $this->wheres[] = [
+            'column' => $column,
+            'operator' => $operator,
+            'boolean' => $boolean,
+        ];
+
+        $this->bindings[] = $value;
+
+        return $this;
+    }
+}

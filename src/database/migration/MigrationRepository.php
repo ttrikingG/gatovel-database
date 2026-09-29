@@ -2,35 +2,48 @@
 
 namespace Gatovel\Database\migration;
 
+use Gatovel\Database\migration\schema\Blueprint;
 use PDO;
 
 class MigrationRepository
 {
     public function __construct(
-        private PDO $connection
+        private PDO $connection,
+        private Schema $schema
     ) {
     }
 
     public function createTable(): void
     {
-        $sql = "
-            CREATE TABLE IF NOT EXISTS migrations (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                migration VARCHAR(255) NOT NULL,
-                batch INT NOT NULL
-            )
-        ";
+        if ($this->tableExists()) {
+            return;
+        }
 
-        $this->connection->exec($sql);
+        $this->schema->create(
+            'migrations',
+            function (Blueprint $table): void {
+                $table->id();
+                $table->string(
+                    'migration',
+                    255
+                );
+                $table->integer(
+                    'batch'
+                );
+            }
+        );
     }
 
-    public function hasRun(string $migration): bool
-    {
+    public function hasRun(
+        string $migration
+    ): bool {
         $statement = $this->connection->prepare(
             'SELECT COUNT(*) FROM migrations WHERE migration = ?'
         );
 
-        $statement->execute([$migration]);
+        $statement->execute([
+            $migration,
+        ]);
 
         return (int) $statement->fetchColumn() > 0;
     }
@@ -54,7 +67,7 @@ class MigrationRepository
 
         $statement->execute([
             $migration,
-            $batch
+            $batch,
         ]);
     }
 
@@ -70,17 +83,37 @@ class MigrationRepository
             'SELECT * FROM migrations WHERE batch = ? ORDER BY id DESC'
         );
 
-        $statement->execute([$batch]);
+        $statement->execute([
+            $batch,
+        ]);
 
-        return $statement->fetchAll(PDO::FETCH_ASSOC);
+        return $statement->fetchAll(
+            PDO::FETCH_ASSOC
+        );
     }
 
-    public function delete(string $migration): void
-    {
+    public function delete(
+        string $migration
+    ): void {
         $statement = $this->connection->prepare(
             'DELETE FROM migrations WHERE migration = ?'
         );
 
-        $statement->execute([$migration]);
+        $statement->execute([
+            $migration,
+        ]);
+    }
+
+    private function tableExists(): bool
+    {
+        try {
+            $this->connection->query(
+                'SELECT 1 FROM migrations WHERE 1 = 0'
+            );
+
+            return true;
+        } catch (\PDOException) {
+            return false;
+        }
     }
 }
