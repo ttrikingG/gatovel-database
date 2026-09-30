@@ -140,23 +140,16 @@ The callback receives a `Blueprint` representing the table structure.
 
 ## Available Column Types
 
-The current Blueprint implementation provides:
+The Blueprint provides the following column types:
 
 ```php
 $table->id();
-
 $table->string('name');
-
 $table->string('code', 100);
-
 $table->text('description');
-
 $table->integer('age');
-
 $table->boolean('active');
-
 $table->timestamp('published_at');
-
 $table->timestamps();
 ```
 
@@ -167,7 +160,80 @@ created_at
 updated_at
 ```
 
-The Schema grammar converts these definitions to the appropriate SQL type for the active database driver.
+Columns are `NOT NULL` by default. Supported column types can explicitly be nullable:
+
+```php
+$table->string('nickname', 255, true);
+$table->text('description', true);
+$table->integer('age', true);
+$table->boolean('active', true);
+$table->timestamp('email_verified_at', true);
+```
+
+String, integer, and boolean columns can define default values:
+
+```php
+$table->string('status', 50, false, 'active');
+$table->integer('score', false, 10);
+$table->boolean('enabled', false, true);
+```
+
+Timestamp columns can explicitly use the current database timestamp as their default:
+
+```php
+$table->timestamp('created_at', false, true);
+```
+
+This generates the database-specific equivalent of `DEFAULT CURRENT_TIMESTAMP`.
+
+`timestamps()` creates `created_at` and `updated_at` without automatically assigning default values.
+
+## Primary and Unique Constraints
+
+`id()` creates the standard auto-incrementing primary key for the active database driver:
+
+```php
+$table->id();
+```
+
+Composite primary keys can be defined with `primary()`:
+
+```php
+$table->integer('user_id');
+$table->integer('role_id');
+
+$table->primary([
+    'user_id',
+    'role_id',
+]);
+```
+
+Unique constraints can be defined for one or more columns:
+
+```php
+$table->string('email');
+
+$table->unique([
+    'email',
+]);
+```
+
+Composite unique constraints are also supported:
+
+```php
+$table->string('provider', 50);
+$table->string('provider_user_id');
+
+$table->unique(
+    [
+        'provider',
+        'provider_user_id',
+    ],
+    'unique_oauth_provider_user'
+);
+```
+
+The unique constraint name is optional. Columns referenced by `primary()` or `unique()` must already exist in the Blueprint.
 
 ## Adding Columns
 
