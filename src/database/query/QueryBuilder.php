@@ -108,6 +108,54 @@ class QueryBuilder
         );
     }
 
+    public function filters(
+        array $filters,
+        array $allowed
+    ): static {
+        if ($filters === []) {
+            return $this;
+        }
+
+        if ($allowed === []) {
+            throw new DatabaseException(
+                'Os filtros permitidos não podem estar vazios.'
+            );
+        }
+
+        foreach ($allowed as $column) {
+            if (!is_string($column) || trim($column) === '') {
+                throw new DatabaseException(
+                    'Os filtros permitidos devem possuir nomes válidos.'
+                );
+            }
+        }
+
+        foreach ($filters as $column => $value) {
+            if (!is_string($column) || trim($column) === '') {
+                throw new DatabaseException(
+                    'O nome do filtro deve ser válido.'
+                );
+            }
+
+            if (!in_array($column, $allowed, true)) {
+                throw new DatabaseException(
+                    "Filtro não permitido: {$column}"
+                );
+            }
+
+            if ($value === null) {
+                continue;
+            }
+
+            $this->where(
+                $column,
+                $value
+            );
+        }
+
+        return $this;
+    }
+
     public function search(
         string $term,
         array $columns
