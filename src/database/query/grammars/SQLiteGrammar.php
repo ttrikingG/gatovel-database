@@ -135,18 +135,40 @@ class SQLiteGrammar implements Grammar
             return '';
         }
 
+        return ' WHERE '
+            . $this->compileWhereConditions(
+                $wheres
+            );
+    }
+
+    private function compileWhereConditions(
+        array $wheres
+    ): string {
         $conditions = [];
 
         foreach ($wheres as $index => $where) {
+            $boolean = $index === 0
+                ? ''
+                : ' ' . $where['boolean'] . ' ';
+
+            if ($where['type'] === 'group') {
+                $condition = '('
+                    . $this->compileWhereConditions(
+                        $where['wheres']
+                    )
+                    . ')';
+
+                $conditions[] = $boolean
+                    . $condition;
+
+                continue;
+            }
+
             $column = $this->wrapIdentifier(
                 $where['column']
             );
 
             $operator = $where['operator'];
-
-            $boolean = $index === 0
-                ? ''
-                : ' ' . $where['boolean'] . ' ';
 
             $conditions[] = $boolean
                 . $column
@@ -155,8 +177,10 @@ class SQLiteGrammar implements Grammar
                 . ' ?';
         }
 
-        return ' WHERE '
-            . implode('', $conditions);
+        return implode(
+            '',
+            $conditions
+        );
     }
 
     private function wrapIdentifier(

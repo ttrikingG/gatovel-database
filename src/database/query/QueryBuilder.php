@@ -2,6 +2,7 @@
 
 namespace Gatovel\Database\query;
 
+use Closure;
 use Gatovel\Database\exceptions\DatabaseException;
 use PDO;
 
@@ -104,6 +105,72 @@ class QueryBuilder
             $column,
             $value,
             'LIKE'
+        );
+    }
+
+    public function search(
+        string $term,
+        array $columns
+    ): static {
+        $term = trim($term);
+
+        if ($term === '') {
+            return $this;
+        }
+
+        if ($columns === []) {
+            throw new DatabaseException(
+                'A busca deve possuir pelo menos uma coluna.'
+            );
+        }
+
+        return $this->whereGroup(
+            function (QueryBuilder $query) use (
+                $term,
+                $columns
+            ): void {
+                $value = '%' . $term . '%';
+
+                foreach ($columns as $index => $column) {
+                    if (!is_string($column) || trim($column) === '') {
+                        throw new DatabaseException(
+                            'As colunas de busca devem possuir nomes válidos.'
+                        );
+                    }
+
+                    if ($index === 0) {
+                        $query->whereLike(
+                            $column,
+                            $value
+                        );
+
+                        continue;
+                    }
+
+                    $query->orWhereLike(
+                        $column,
+                        $value
+                    );
+                }
+            }
+        );
+    }
+
+    public function whereGroup(
+        Closure $callback
+    ): static {
+        return $this->addWhereGroup(
+            $callback,
+            'AND'
+        );
+    }
+
+    public function orWhereGroup(
+        Closure $callback
+    ): static {
+        return $this->addWhereGroup(
+            $callback,
+            'OR'
         );
     }
 
@@ -378,12 +445,47 @@ class QueryBuilder
         }
 
         $this->wheres[] = [
+            'type' => 'basic',
             'column' => $column,
             'operator' => $operator,
             'boolean' => $boolean,
         ];
 
         $this->bindings[] = $value;
+
+        return $this;
+    }
+
+    private function addWhereGroup(
+        Closure $callback,
+        string $boolean
+    ): static {
+        $query = new static(
+            $this->connection,
+            $this->table,
+            $this->grammar
+        );
+
+        $callback(
+            $query
+        );
+
+        if ($query->wheres === []) {
+            throw new DatabaseException(
+                'O grupo WHERE não pode estar vazio.'
+            );
+        }
+
+        $this->wheres[] = [
+            'type' => 'group',
+            'boolean' => $boolean,
+            'wheres' => $query->wheres,
+        ];
+
+        $this->bindings = array_merge(
+            $this->bindings,
+            $query->bindings
+        );
 
         return $this;
     }
