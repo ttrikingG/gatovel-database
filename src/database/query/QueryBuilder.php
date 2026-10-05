@@ -33,6 +33,8 @@ class QueryBuilder
 
     private ?int $limit = null;
 
+    private ?int $offset = null;
+
     public function __construct(
         PDO $connection,
         string $table,
@@ -119,13 +121,28 @@ class QueryBuilder
         return $this;
     }
 
+    public function offset(
+        int $offset
+    ): static {
+        if ($offset < 0) {
+            throw new DatabaseException(
+                'O offset não pode ser negativo.'
+            );
+        }
+
+        $this->offset = $offset;
+
+        return $this;
+    }
+
     public function get(): array
     {
         $sql = $this->grammar->compileSelect(
             $this->table,
             $this->columns,
             $this->wheres,
-            $this->limit
+            $this->limit,
+            $this->offset
         );
 
         $statement = $this->connection->prepare(
@@ -165,6 +182,92 @@ class QueryBuilder
         return $result === false
             ? null
             : $result;
+    }
+
+    public function count(): int
+    {
+        $sql = $this->grammar->compileCount(
+            $this->table,
+            $this->wheres
+        );
+
+        $statement = $this->connection->prepare(
+            $sql
+        );
+
+        $statement->execute(
+            $this->bindings
+        );
+
+        return (int) $statement->fetchColumn();
+    }
+
+    public function paginate(
+        int $perPage = 15,
+        int $page = 1
+    ): array {
+        if ($perPage < 1) {
+            throw new DatabaseException(
+                'A quantidade de registros por página deve ser maior que zero.'
+            );
+        }
+
+        if ($page < 1) {
+            throw new DatabaseException(
+                'A página atual deve ser maior que zero.'
+            );
+        }
+
+        $total = $this->count();
+
+        $lastPage = max(
+            1,
+            (int) ceil($total / $perPage)
+        );
+
+        $offset = ($page - 1) * $perPage;
+
+        $sql = $this->grammar->compileSelect(
+            $this->table,
+            $this->columns,
+            $this->wheres,
+            $perPage,
+            $offset
+        );
+
+        $statement = $this->connection->prepare(
+            $sql
+        );
+
+        $statement->execute(
+            $this->bindings
+        );
+
+        $data = $statement->fetchAll(
+            PDO::FETCH_ASSOC
+        );
+
+        $count = count($data);
+
+        $from = $count === 0
+            ? null
+            : $offset + 1;
+
+        $to = $count === 0
+            ? null
+            : $offset + $count;
+
+        return [
+            'data' => $data,
+            'pagination' => [
+                'current_page' => $page,
+                'per_page' => $perPage,
+                'total' => $total,
+                'last_page' => $lastPage,
+                'from' => $from,
+                'to' => $to,
+            ],
+        ];
     }
 
     public function insert(

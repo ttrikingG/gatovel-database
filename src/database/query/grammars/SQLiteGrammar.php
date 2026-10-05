@@ -11,7 +11,8 @@ class SQLiteGrammar implements Grammar
         string $table,
         array $columns,
         array $wheres,
-        ?int $limit = null
+        ?int $limit = null,
+        ?int $offset = null
     ): string {
         $table = $this->wrapIdentifier($table);
 
@@ -34,11 +35,33 @@ class SQLiteGrammar implements Grammar
             $wheres
         );
 
+        if ($offset !== null && $limit === null) {
+            throw new DatabaseException(
+                'OFFSET exige que um LIMIT seja definido.'
+            );
+        }
+
         if ($limit !== null) {
             $sql .= " LIMIT {$limit}";
         }
 
+        if ($offset !== null) {
+            $sql .= " OFFSET {$offset}";
+        }
+
         return $sql;
+    }
+
+    public function compileCount(
+        string $table,
+        array $wheres
+    ): string {
+        $table = $this->wrapIdentifier($table);
+
+        return "SELECT COUNT(*) FROM {$table}"
+            . $this->compileWheres(
+                $wheres
+            );
     }
 
     public function compileInsert(

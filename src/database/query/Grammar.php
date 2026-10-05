@@ -8,7 +8,13 @@ interface Grammar
         string $table,
         array $columns,
         array $wheres,
-        ?int $limit = null
+        ?int $limit = null,
+        ?int $offset = null
+    ): string;
+
+    public function compileCount(
+        string $table,
+        array $wheres
     ): string;
 
     public function compileInsert(
